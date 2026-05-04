@@ -157,7 +157,7 @@
     <div id="apiSetup" style="margin-bottom: 1rem;">
       <label>Apps Script Web App URL</label>
       <input type="text" id="apiUrl" placeholder="https://script.google.com/macros/s/..../exec" />
-      <div class="info" style="font-size: 11px;">https://script.google.com/macros/s/AKfycbwYJzFw0DMgJSRbHyXXnZ-OjXIp_BGM5msQpWCAwCMR_-7cuXbGS2BhsV5qNvxppCn6SA/exec</div>
+      <div class="info" style="font-size: 11px;">ใส่ URL ของ Web App ที่ deploy จาก GAS (ครั้งแรกครั้งเดียว)</div>
     </div>
 
     <div style="margin-bottom: 12px;">
@@ -561,7 +561,9 @@ function renderDashboard(month, sum, orders, allMonths) {
     <div class="grid grid-2">
       <div class="card">
         <div class="card-title">ยอดขาย vs กำไร · 6 เดือนล่าสุด</div>
-        <canvas id="trendChart" height="160"></canvas>
+        <div style="position: relative; height: 200px; width: 100%;">
+          <canvas id="trendChart"></canvas>
+        </div>
       </div>
       <div class="card">
         <div class="card-title">การกระจายตัว</div>
@@ -598,7 +600,10 @@ function renderDashboard(month, sum, orders, allMonths) {
   setTimeout(() => {
     const last6 = allMonths.filter(s => !s.isYearTotal).slice(-6);
     const ctx = document.getElementById('trendChart');
-    if (ctx) new Chart(ctx, {
+    if (!ctx) return;
+    // destroy old chart instance ถ้ามี
+    if (state.trendChart) { state.trendChart.destroy(); state.trendChart = null; }
+    state.trendChart = new Chart(ctx, {
       type: 'bar',
       data: {
         labels: last6.map(s => s.period),
