@@ -518,7 +518,29 @@ async function loadDashboard() {
     if (!resSum.ok || !resData.ok) {
       content.innerHTML = `<div class="empty">ผิดพลาด</div>`; return;
     }
-    const summary = resSum.data.find(s => s.period === month) || {};
+    let summary = resSum.data.find(s => String(s.period).trim() === String(month).trim());
+
+    // ถ้าไม่เจอใน SUMMARY → คำนวณจาก orders เลย
+    if (!summary) {
+      const orders = resData.data;
+      summary = {
+        period: month, year: month.slice(0,4),
+        orders: orders.length,
+        returns: orders.filter(o => String(o.status).includes('คืน')).length,
+        income: orders.reduce((s,o) => s + (parseFloat(o.inc)||0), 0),
+        cost:   orders.reduce((s,o) => s + (parseFloat(o.cost)||0), 0),
+        profit: orders.reduce((s,o) => s + (parseFloat(o.profit)||0), 0),
+        profOrders: orders.filter(o => parseFloat(o.profit) >= 0).length,
+        lossOrders: orders.filter(o => parseFloat(o.profit) <  0).length,
+        lossPrice:  orders.filter(o => o.lossType === 'ขาดทุนจากราคาขาย').length,
+        lossShip:   orders.filter(o => o.lossType === 'ขาดทุนจากขนส่ง').length,
+        claimCount: 0, claimAmount: 0,
+        expenses: 0, netProfit: 0,
+      };
+      summary.netProfit = summary.profit - summary.expenses;
+      summary.pct = summary.income ? summary.profit / Math.abs(summary.income) : 0;
+    }
+
     const orders = resData.data;
     state.ordersData = orders;
     renderDashboard(month, summary, orders, resSum.data);
@@ -544,7 +566,7 @@ function renderDashboard(month, sum, orders, allMonths) {
       <div class="stat-card blue">
         <div class="stat-label">กำไรจากสินค้า</div>
         <div class="stat-value" style="color:${(sum.profit||0)>=0?'var(--green)':'var(--red)'}">฿${fmt(sum.profit)}</div>
-        <div class="stat-sub">${pct(sum.pct*100)} margin</div>
+        <div class="stat-sub">${pct(sum.pct)} margin</div>
       </div>
       <div class="stat-card orange">
         <div class="stat-label">ค่าใช้จ่าย</div>
@@ -698,7 +720,10 @@ function fmt(n) {
 }
 function pct(n) {
   if (!n) return '0%';
-  return parseFloat(n).toFixed(1) + '%';
+  const v = parseFloat(n);
+  // ถ้าค่า < 1 (เช่น 0.139) แปลงเป็น %
+  const finalVal = Math.abs(v) < 1 ? v * 100 : v;
+  return finalVal.toFixed(1) + '%';
 }
 function truncate(s, n) {
   s = String(s||'');
