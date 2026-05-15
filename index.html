@@ -401,25 +401,35 @@ async function handleFile(kind, file) {
   const status = document.getElementById('status-' + kind);
   status.textContent = '⏳ กำลังอ่าน...';
   try {
-    const data = await readExcel(file);
-    state.fileData[kind] = data;
+    // sheet name ที่ต้องการสำหรับแต่ละไฟล์
+    const preferred = { income: 'Income', order: 'Order.all', mass: 'sales_information' }[kind];
+    const result = await readExcel(file, preferred);
+    state.fileData[kind] = result.data;
     dz.classList.add('has-file');
-    status.textContent = `✓ ${file.name} (${data.length} rows)`;
+    status.textContent = `✓ ${file.name} → "${result.sheetName}" (${result.data.length} rows)`;
   } catch(e) {
     status.innerHTML = `<span class="err">✗ ${e.message}</span>`;
   }
   updateAnalyzeBtn();
 }
 
-function readExcel(file) {
+function readExcel(file, preferredSheet) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = e => {
       try {
         const wb = XLSX.read(new Uint8Array(e.target.result), { type:'array' });
-        const ws = wb.Sheets[wb.SheetNames[0]];
+        // เลือก sheet: ถ้ามี preferredSheet ใน workbook ใช้อันนั้น ไม่งั้นใช้อันแรก
+        let sheetName = wb.SheetNames[0];
+        if (preferredSheet) {
+          const match = wb.SheetNames.find(n => n === preferredSheet ||
+            n.toLowerCase() === preferredSheet.toLowerCase() ||
+            n.toLowerCase().includes(preferredSheet.toLowerCase()));
+          if (match) sheetName = match;
+        }
+        const ws = wb.Sheets[sheetName];
         const json = XLSX.utils.sheet_to_json(ws, { header:1, defval:'', raw:false });
-        resolve(json);
+        resolve({ data: json, sheetName, allSheets: wb.SheetNames });
       } catch(err) { reject(err); }
     };
     reader.onerror = () => reject(new Error('อ่านไฟล์ไม่ได้'));
