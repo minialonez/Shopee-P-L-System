@@ -188,6 +188,7 @@
       <a class="nav-link active" data-page="upload" onclick="goPage('upload')">Upload</a>
       <a class="nav-link" data-page="dashboard" onclick="goPage('dashboard')">Dashboard</a>
       <a class="nav-link" data-page="orders" onclick="goPage('orders')">Orders</a>
+      <a class="nav-link" data-page="claims" onclick="goPage('claims')">Claim</a>
     </div>
     <div class="topbar-user">
       <div class="user-avatar" id="userAvatar">T</div>
@@ -283,6 +284,33 @@
       </div>
     </div>
 
+    <!-- ========== CLAIMS PAGE ========== -->
+    <div class="page" id="page-claims">
+      <div class="header-actions">
+        <div>
+          <div class="page-title">รายการเคลมขนส่ง</div>
+          <div class="page-sub">ออเดอร์ที่ Shopee คิดค่าขนส่งเกิน (T+U+V+W &lt; 0 และไม่มีคืนสินค้า)</div>
+        </div>
+        <div class="spacer"></div>
+        <select id="claimsMonth" onchange="loadClaims()"></select>
+      </div>
+
+      <div class="grid grid-2" style="margin-bottom: 12px;">
+        <div class="stat-card orange">
+          <div class="stat-label">จำนวนออเดอร์เคลม</div>
+          <div class="stat-value" id="claimCount">0</div>
+        </div>
+        <div class="stat-card blue">
+          <div class="stat-label">ยอดเงินรวมที่เคลมได้</div>
+          <div class="stat-value" id="claimTotal">฿0</div>
+        </div>
+      </div>
+
+      <div class="card" style="padding: 0; overflow: auto;">
+        <table id="claimsTable"></table>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -355,6 +383,7 @@ function goPage(p) {
   document.querySelector('.nav-link[data-page="' + p + '"]').classList.add('active');
   if (p === 'dashboard') loadDashboard();
   if (p === 'orders') loadOrders();
+  if (p === 'claims') loadClaims();
 }
 
 // ============ API ============
@@ -505,11 +534,16 @@ async function loadMonthList() {
   try {
     const r = await apiGet('monthlist');
     if (!r.ok) return;
-    const months = r.data;
-    ['monthSelect','ordersMonth'].forEach(id => {
+    // sort ascending: 2026-01, 2026-02, ..., 2026-12
+    const months = (r.data||[]).slice().sort((a,b) => String(a).localeCompare(String(b)));
+    ['monthSelect','ordersMonth','claimsMonth'].forEach(id => {
       const sel = document.getElementById(id);
+      if (!sel) return;
+      const cur = sel.value;
       sel.innerHTML = '<option value="">-- เลือกเดือน --</option>' +
         months.map(m => `<option value="${m}">${m}</option>`).join('');
+      if (cur) sel.value = cur;
+      else if (months.length) sel.value = months[months.length-1]; // default = ล่าสุด
     });
   } catch(e) {}
 }
@@ -560,6 +594,11 @@ async function loadDashboard() {
 }
 
 function renderDashboard(month, sum, orders, allMonths) {
+  // force numeric
+  ['orders','returns','income','cost','profit','pct','profOrders','lossOrders',
+   'lossPrice','lossShip','claimCount','claimAmount','expenses','netProfit']
+   .forEach(k => { sum[k] = parseFloat(sum[k]) || 0; });
+
   document.getElementById('dashTitle').textContent = 'รอบ ' + month;
   document.getElementById('dashSub').textContent = `${sum.orders||0} ออเดอร์ · อัปเดตล่าสุด`;
 
@@ -630,7 +669,10 @@ function renderDashboard(month, sum, orders, allMonths) {
 
   // chart
   setTimeout(() => {
-    const last6 = allMonths.filter(s => !s.isYearTotal).slice(-6);
+    const last6 = allMonths
+      .filter(s => !s.isYearTotal)
+      .sort((a,b) => String(a.period).localeCompare(String(b.period)))
+      .slice(-6);
     const ctx = document.getElementById('trendChart');
     if (!ctx) return;
     // destroy old chart instance ถ้ามี
@@ -720,6 +762,65 @@ function badgeFor(o) {
   if (o.lossType === 'ขาดทุนจากขนส่ง') return '<span class="badge badge-loss-ship">ขาดทุนขนส่ง</span>';
   if (o.profit < 0) return '<span class="badge badge-loss">ขาดทุน</span>';
   return '<span class="badge badge-profit">กำไร</span>';
+}
+
+// ============ CLAIMS ============
+async function loadClaims() {
+  const month = document.getElementById('claimsMonth').value;
+  const tbl = document.getElementById('claimsTable');
+  if (!month) {
+    tbl.innerHTML = '<tr><td class="empty">เลือกเดือน</td></tr>';
+    document.getElementById('claimCount').textContent = '0';
+    document.getElementById('claimTotal').textContent = '฿0';
+    return;
+  }
+  tbl.innerHTML = '<tr><td class="empty">กำลังโหลด...</td></tr>';
+  try {
+    const r = await apiGet('claims', { month });
+    if (!r.ok) { tbl.innerHTML = `<tr><td class="empty">${r.error}</td></tr>`; return; }
+    renderClaims(r.data);
+  } catch(e) {
+    tbl.innerHTML = `<tr><td class="empty">${e.message}</td></tr>`;
+  }
+}
+
+function renderClaims(rows) {
+  const tbl = document.getElementById('claimsTable');
+  document.getElementById('claimCount').textContent = rows.length;
+  const total = rows.reduce((s,r) => s + (parseFloat(r.shipOver)||0), 0);
+  document.getElementById('claimTotal').textContent = '฿' + fmt(total);
+
+  if (!rows.length) {
+    tbl.innerHTML = '<tr><td class="empty">ไม่มีออเดอร์ที่ขนส่งคิดเกินในเดือนนี้</td></tr>';
+    return;
+  }
+
+  tbl.innerHTML = `
+    <thead>
+      <tr>
+        <th style="width:30px">#</th>
+        <th>หมายเลขคำสั่งซื้อ</th>
+        <th>เลขติดตามพัสดุ</th>
+        <th>วันที่</th>
+        <th>สินค้า</th>
+        <th class="num">ค่าขนส่งสุทธิ</th>
+        <th class="num">คิดเกิน</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rows.map((r,i) => `
+        <tr>
+          <td class="num">${i+1}</td>
+          <td class="mono">${r.oid}</td>
+          <td class="mono" style="font-size:11px">${r.tracking||'-'}</td>
+          <td>${formatDate(r.date)}</td>
+          <td>${truncate(r.items, 35)}</td>
+          <td class="num">${fmt(r.shipNet)}</td>
+          <td class="num" style="color:var(--red); font-weight:500">${fmt(r.shipOver)}</td>
+        </tr>
+      `).join('')}
+    </tbody>
+  `;
 }
 
 // ============ UTILS ============
