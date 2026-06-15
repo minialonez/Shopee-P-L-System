@@ -402,12 +402,8 @@ async function apiPost(body) {
 }
 
 async function apiGet(action, params={}) {
-  const url = new URL(state.apiUrl);
-  url.searchParams.set('action', action);
-  url.searchParams.set('token', state.token);
-  Object.entries(params).forEach(([k,v]) => url.searchParams.set(k,v));
-  const res = await fetch(url.toString());
-  return res.json();
+  // ใช้ POST แทน GET เพื่อเลี่ยงปัญหา Apps Script redirect GET requests
+  return apiPost({ action, ...params });
 }
 
 // ============ UPLOAD ============
