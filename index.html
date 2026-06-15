@@ -376,11 +376,20 @@ function showApp() {
 }
 
 // ============ NAVIGATION ============
-function goPage(p) {
+async function goPage(p) {
   document.querySelectorAll('.page').forEach(x => x.classList.remove('show'));
   document.getElementById('page-' + p).classList.add('show');
   document.querySelectorAll('.nav-link').forEach(x => x.classList.remove('active'));
   document.querySelector('.nav-link[data-page="' + p + '"]').classList.add('active');
+
+  // หน้าที่ต้องใช้ dropdown เดือน → โหลด list ก่อนถ้ายังว่าง
+  if (p === 'dashboard' || p === 'orders' || p === 'claims') {
+    const sel = document.getElementById(
+      p === 'dashboard' ? 'monthSelect' : p === 'orders' ? 'ordersMonth' : 'claimsMonth'
+    );
+    if (sel && sel.options.length <= 1) await loadMonthList();
+  }
+
   if (p === 'dashboard') loadDashboard();
   if (p === 'orders') loadOrders();
   if (p === 'claims') loadClaims();
@@ -766,10 +775,18 @@ function badgeFor(o) {
 
 // ============ CLAIMS ============
 async function loadClaims() {
-  const month = document.getElementById('claimsMonth').value;
+  const sel = document.getElementById('claimsMonth');
+  // ถ้า dropdown ยังว่าง ลองโหลดใหม่
+  if (sel.options.length <= 1) await loadMonthList();
+
+  const month = sel.value;
   const tbl = document.getElementById('claimsTable');
   if (!month) {
-    tbl.innerHTML = '<tr><td class="empty">เลือกเดือน</td></tr>';
+    if (sel.options.length <= 1) {
+      tbl.innerHTML = '<tr><td class="empty">ยังไม่มีข้อมูลเดือนใดๆ — กรุณา Upload ไฟล์ก่อน</td></tr>';
+    } else {
+      tbl.innerHTML = '<tr><td class="empty">เลือกเดือน</td></tr>';
+    }
     document.getElementById('claimCount').textContent = '0';
     document.getElementById('claimTotal').textContent = '฿0';
     return;
