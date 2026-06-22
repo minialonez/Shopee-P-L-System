@@ -318,18 +318,19 @@
 // ============ STATE ============
 const state = {
   apiUrl: localStorage.getItem('apiUrl') || '',
-  token: localStorage.getItem('token') || '',
   username: localStorage.getItem('username') || '',
+  password: localStorage.getItem('password') || '',
   files: { order:null, income:null, mass:null },
   fileData: { order:null, income:null, mass:null },
   lastResult: null,
   ordersData: [],
+  trendChart: null,
 };
 
 // ============ INIT ============
 window.addEventListener('DOMContentLoaded', () => {
   if (state.apiUrl) document.getElementById('apiUrl').value = state.apiUrl;
-  if (state.token) showApp();
+  if (state.username && state.password) showApp();
   setupDropZones();
 });
 
@@ -348,11 +349,12 @@ async function doLogin() {
   localStorage.setItem('apiUrl', url);
 
   try {
-    const r = await apiPost({ action:'login', username:u, password:p });
+    // ส่ง credentials ตรงๆ
+    const r = await apiRaw({ action:'login', username:u, password:p });
     if (!r.ok) { msg.innerHTML = `<div class="err">${r.error}</div>`; return; }
-    state.token = r.token; state.username = r.username;
-    localStorage.setItem('token', r.token);
-    localStorage.setItem('username', r.username);
+    state.username = u; state.password = p;
+    localStorage.setItem('username', u);
+    localStorage.setItem('password', p);
     showApp();
   } catch(e) {
     msg.innerHTML = `<div class="err">เกิดข้อผิดพลาด: ${e.message}</div>`;
@@ -360,9 +362,9 @@ async function doLogin() {
 }
 
 function doLogout() {
-  state.token = ''; state.username = '';
-  localStorage.removeItem('token');
+  state.username = ''; state.password = '';
   localStorage.removeItem('username');
+  localStorage.removeItem('password');
   document.getElementById('appPage').classList.remove('show');
   document.getElementById('loginPage').style.display = 'flex';
 }
@@ -391,18 +393,30 @@ async function goPage(p) {
 }
 
 // ============ API ============
-async function apiPost(body) {
-  if (state.token && !body.token) body.token = state.token;
+// raw call (สำหรับ login — ไม่แนบ credentials จาก state)
+async function apiRaw(body) {
   const res = await fetch(state.apiUrl, {
     method: 'POST',
     body: JSON.stringify(body),
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // หลีกเลี่ยง CORS preflight
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // เลี่ยง CORS preflight
   });
   return res.json();
 }
 
+// call ที่แนบ username/password อัตโนมัติ
+async function apiPost(body) {
+  body.username = state.username;
+  body.password = state.password;
+  const r = await apiRaw(body);
+  // ถ้า unauthorized → เด้งกลับหน้า login
+  if (r && r.ok === false && r.error === 'unauthorized') {
+    doLogout();
+    document.getElementById('loginMsg').innerHTML = '<div class="err">เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่</div>';
+  }
+  return r;
+}
+
 async function apiGet(action, params={}) {
-  // ใช้ POST แทน GET เพื่อเลี่ยงปัญหา Apps Script redirect GET requests
   return apiPost({ action, ...params });
 }
 
